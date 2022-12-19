@@ -1,0 +1,17 @@
+var grid_imgS2 = ee.FeatureCollection("projects/mapbiomas-workspace/AUXILIAR/SENTINEL2/grid_sentinel")
+
+var regioesCollection = ee.FeatureCollection('projects/mapbiomas-workspace/AUXILIAR/REGIOES/VETOR/PAMPA_regioes_col05_buff')
+var limite = regioesCollection.filterMetadata('ID', 'equals', 1);
+Map.addLayer(limite)
+
+var lista = grid_imgS2.filterBounds(limite)
+                     .aggregate_array('NAME')
+print(lista)
+
+
+
+Map.addLayer(grid_imgS2.filterBounds(limite))
+//Map.addLayer(grid_imgS2.filterMetadata('NAME','equals','SH22Y'))
+
+//22JBM  22JCM
+//22JBL  22JCL

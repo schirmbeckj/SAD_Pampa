@@ -1,0 +1,286 @@
+
+var lista_grupos = ['regiao 1']
+//var lista_grupos = ['4-SUL']
+
+var mes_referencia = 11 // mês de execução
+var ano = 2022
+var num_samples_flo = 500
+
+var bioma = 'PAMPA'
+var debug = false
+var print_numbers = false
+var exporta = true
+var usa_GLAD = true
+
+// definição das datas
+var data_referencia = ee.Date.fromYMD(ano,mes_referencia,01)     
+var data_referencia_ini = data_referencia.advance(-6,'month')
+var data_referencia_fim = data_referencia.advance(-3,'month').advance(-1,'day')
+var data_analise_ini = data_referencia.advance(-2,'month')   
+var data_analise_fim = data_referencia.advance(-1,'day')      
+print('data_referencia',data_referencia.format('dd/MM/yyyy'),
+'data_referencia_ini',data_referencia_ini.format('dd/MM/yyyy'), 
+'data_referencia_fim',data_referencia_fim.format('dd/MM/yyyy'), 
+'data_analise_ini',data_analise_ini.format('dd/MM/yyyy'),
+'data_analise_ini',data_analise_fim.format('dd/MM/yyyy'))
+
+
+// definição de caminhos
+//var asset_S2_mosaicos = 'projects/nexgenmap/MapBiomas2/SENTINEL/mosaics'
+//var tiles_grids = ee.FeatureCollection('users/marcosrosaUSP/SAD_MataAtlantica/SAD_MA_grid_Sentinel2_groups')
+var grid_imgS2 = ee.FeatureCollection("projects/mapbiomas-workspace/AUXILIAR/SENTINEL2/grid_sentinel")
+
+var s2_lv1 = ee.ImageCollection('COPERNICUS/S2_SR');
+var s2Clouds = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY');
+
+var Mapbiomas_col6 = ee.Image('projects/mapbiomas-workspace/public/collection6/mapbiomas_collection60_integration_v1')
+
+//var colFBDS_IMAFLORA = ee.ImageCollection('projects/nexgenmap/ANCILLARY/FBDS/base5m_col').min()
+//var LeiMA_vegetacao250mil_IBGE = ee.FeatureCollection('projects/nexgenmap/SAD_MapBiomas/MataAtlan_SOS/referencia/vegetacao250mil_IBGE')
+//var reflo_FBDS = colFBDS_IMAFLORA.remap([6],[1],0)
+//Map.addLayer(reflo_FBDS, vis, 'reflo_FBDS', false)
+
+var palettes = require('users/mapbiomas/modules:Palettes.js');
+var pal = palettes.get('classification2');
+var vis = {bands: 'classification_2020','min': 0,'max': 45,'palette': palettes.get('classification5')};
+var visNDVI = {min: 7000,max: 20000,palette: ['ffffff', 'ce7e45', 'df923d', 'f1b555',
+            'fcd163', '99b718', '74a901', '66a000','529400', '3e8601', '609406', '2e8a17',
+            '207401', '2b7a11', '1b570c', '004c00','023b01',],opacity: 1.0}
+var bandNames = ['B2', 'B3',   'B4', 'B8', 'B11',  'B12',  'QA60']
+var newNames = ['blue','green','red','nir','swir1','swir2','BQA']
+
+// funcoes
+var s2SrWithCloudMask = ee.Join.saveFirst('cloud_mask').apply({
+  primary: s2_lv1,
+  secondary: s2Clouds,
+  condition:
+      ee.Filter.equals({leftField: 'system:index', rightField: 'system:index'})
+});
+
+function maskClouds10(img) {
+  var clouds = ee.Image(img.get('cloud_mask')).select('probability');
+  var isNotCloud = clouds.lt(10);
+  var shade = img.gt(500)
+  return img.updateMask(isNotCloud)//.updateMask(shade);
+}
+function addIndexBands(img) {
+  img = img.select(bandNames,newNames)
+  return img.addBands(img.expression('( b("nir") - b("red") ) / ( b("nir") + b("red") )').rename("ndvi").add(1).multiply(10000).int16())
+};
+var s2CloudMasked = ee.ImageCollection(s2SrWithCloudMask)
+
+for (var i_grupo=0;i_grupo<lista_grupos.length; i_grupo++){
+  var nome_grupo = lista_grupos[i_grupo];
+
+//var nome_grupo = '4-SUL' // '1-NE-Encrave' '2-NE-Litoral' '3-Sudeste' '4-SUL' '5-MG' '6-MS'
+ 
+  if (nome_grupo == 'regiao 1') {
+    var tiles_bacia = [ '22JBM','22JCM',
+                        '22JBL','22JCL',]
+    var dif_ndvi_10mil = -3500
+    var val_subtrai_NDVI = 1500   //TODO o que representa esse 1500?
+    var area_minima = 5000
+    var num_repeticoes = 4
+ } //else if (nome_grupo == '2-NE-Litoral') {
+  //  var tiles_bacia = ['24KTD','24KTE','24KTF','24KTG','24KUD','24KUE','24KUF','24KUG','24KVF','24KVG','24LTH','24LTJ','24LUH','24LUJ','24LUK','24LVH','24LVJ','24LVK','24LVL','24LWL','24LWM','24LXM','24LXN','24LXP','24LYP','24LYQ','24LYR','24LZQ','24LZR','24MZS','25LBL','25MBM','25MBN','25MBP',]
+  //  var dif_ndvi_10mil = -3500
+  //  var val_subtrai_NDVI = 1500  
+  //  var area_minima = 5000
+  //  var num_repeticoes = 4
+  //}
+
+for (var i_cena=0;i_cena<tiles_bacia.length; i_cena++){
+  
+  var codigo_grid_S2 = tiles_bacia[i_cena];
+
+  // inicio da execução
+  var grid_selec = grid_imgS2.filterMetadata('NAME','equals',codigo_grid_S2)
+  grid_selec = ee.Feature(grid_selec.first())
+  grid_selec = grid_selec.buffer(-4000)
+//  grid_selec = grid_selec.intersection(bacia,1)
+//  grid_selec = grid_selec.map(function(feat) {return feat.buffer(-4000)});
+//  grid_selec = grid_selec.map(function(feat) {return feat.intersection(bacia,1)});
+  
+  var centroid = grid_selec.geometry().centroid(1)
+
+  if (debug) {print(grid_selec)
+    //Map.addLayer(classS2_20, vis, 'classMA_Sentinel', false)
+    Map.addLayer(grid_imgS2, {},"grid_imgS2", false)
+    //Map.addLayer(bacias_pri, {},"bacias_pri", false)
+  }
+  //Map.addLayer(grid_selec, {color: 'orange'},"grid_selec", false)
+  
+
+  // selecao das imagens S2
+
+  var s2_refencia = s2CloudMasked.filterDate(data_referencia_ini, data_referencia_fim)
+      .filterMetadata('MGRS_TILE','equals',codigo_grid_S2)
+      .map(maskClouds10).map(addIndexBands)
+  var s2_analises = s2CloudMasked.filterDate(data_analise_ini, data_analise_fim)
+      .filterMetadata('MGRS_TILE','equals',codigo_grid_S2)
+      .map(maskClouds10).map(addIndexBands)
+
+  //usado somente para adicianar a camada
+  var s2_refencia_median = s2_refencia.median()
+  var s2_analises_median = s2_analises.median()
+  
+  //usado na deteção
+  var s2_refencia_NDVI = s2_refencia.select('ndvi').median()
+  
+  function difNDVI(img) {
+    var ndvi_dif = img.select('ndvi').subtract(s2_refencia_NDVI)
+    return ndvi_dif
+  }
+  
+  if (debug) {
+    Map.addLayer(training_referencia, {bands: ['red', 'green', 'blue'], min: 0, max: 2000},'s2_refencia_median',false);
+    Map.addLayer(s2_analises_median, {bands: ['red', 'green', 'blue'], min: 0, max: 2000},'s2_analises_median',true);
+    Map.addLayer(s2_refencia_median.select('ndvi'),     visNDVI,'s2_refencia_ndvi',false);
+    Map.addLayer(s2_analises_median.select('ndvi'),     visNDVI,'s2_analises_ndvi',false);
+  }
+  
+  // NDVI da coleção de imagens do periodo de análise subtraido da mediana da referência
+  var col_ndvi_dif = s2_analises.map(difNDVI)
+  
+//  var flo2020 = classS2_20.remap([3,21],[1,2]).clip(grid_selec).selfMask()
+
+  //mascara de floresta para a coleção 6
+  var flo2020 = Mapbiomas_col6.select('classification_2020').remap([3,4],[1,1]).clip(grid_selec).selfMask()
+  //var flo2020 = Mapbiomas_col6.select('classification_2020').remap([3,4],[1,1]).clip(grid_selec)
+  //var campo2020 = Mapbiomas_col6.select('classification_2020').remap([12],[1]).clip(grid_selec)
+  
+  //flo2020 = flo2020.add(campo2020).neq(0).selfMask()
+  
+  if (debug) {
+    print(col_ndvi_dif)
+    Map.addLayer(col_ndvi_dif.mean(), {min: -3000, max: 3000, 'palette': 'red, yellow, green'}, 'col_ndvi_dif',false);
+    Map.addLayer(flo2020, {'palette': 'green, yellow'}, 'flo2020',false);
+  
+  }
+  
+  var pts_flo = flo2020.stratifiedSample({numPoints:0, classBand: 'remapped', 
+                region: grid_selec.geometry(), scale: 30, seed: 1, classValues: [1], classPoints:[num_samples_flo], geometries: true} )
+  
+  //print(pts_flo.limit(1))
+  //Map.addLayer(pts_flo,false);
+  
+  var training_referencia = s2_refencia_NDVI.sampleRegions({'collection': pts_flo,'scale': 10,});
+  var training_analise = s2_analises_median.select('ndvi').sampleRegions({'collection': pts_flo,'scale': 10,});
+  
+  //print("média NDVI 2020 flo",training_referencia.filterMetadata('remapped', 'equals', 1).aggregate_mean('ndvi'))
+  //print("média NDVI 2021 flo",training_analise.filterMetadata('remapped', 'equals', 1).aggregate_mean('ndvi'))
+  //print("média NDVI 2020 pas",training_referencia.filterMetadata('remapped', 'equals', 2).aggregate_mean('ndvi'))
+  //print("média NDVI 2021 pas",training_analise.filterMetadata('remapped', 'equals', 2).aggregate_mean('ndvi'))
+  
+  var dif_anal_to_refe =  training_analise.aggregate_mean('ndvi').subtract(training_referencia.aggregate_mean('ndvi'))
+  //if (print_numbers) {print('dif NDVI',training_analise)}
+  //print('dif NDVI 21', training_analise.filterMetadata('remapped', 'equals', 1).aggregate_mean('ndvi').subtract(training_analise.filterMetadata('remapped', 'equals', 2).aggregate_mean('ndvi')))
+  
+  
+  function recNDVI(img) {
+    var desmat = img.lt(ee.Number(dif_ndvi_10mil).add(dif_anal_to_refe))
+    return desmat
+  }
+  
+  // cena -  referência
+  //  2           7,5
+  // diferença = - 5,5
+  
+  // sazonalidade  -0,5 
+  
+  //difereça < -3.5 + -0,5
+  //-5,5  < -4
+  
+  var desmat_ndvi = col_ndvi_dif.map(recNDVI)
+  //print(desmat_ndvi)
+  
+  //aplica máscara de NDVI
+  s2_refencia_NDVI = s2_refencia_NDVI.mask(s2_refencia_NDVI.gt(training_referencia.aggregate_mean('ndvi').subtract(ee.Number(val_subtrai_NDVI))))
+  //Map.addLayer(s2_refencia_NDVI,     visNDVI,'s2_refencia_NDVI MASK',false);
+  
+  // mascara pela classe de floresta
+  var desmats = desmat_ndvi.sum().mask(flo2020.selfMask())
+  
+  //segunda mascara, proveniente de valores de ndvi médio subtraido do limiar de ndvi 1000 ou 15000
+  desmats = desmats.mask(s2_refencia_NDVI)
+  
+  // testa o numero de repetições
+  var desmats_repetido = desmats.gt(num_repeticoes).selfMask()
+  
+//  var flo_col6 = Mapbiomas_col6.select('classification_2020').eq(3)
+  
+  // TODO debugar o efeito da mascara parece repetido
+  var desmats_flo_col6 = desmats_repetido.mask(flo2020).selfMask()
+//  if (debug) {
+//    Map.addLayer(desmats_repetido, {'palette': 'red'}, 'desmats repetidos', false);
+//    Map.addLayer(desmats_flo_col6, {'palette': 'red'}, 'desmats sem reflo MapBiomas6', false);
+//  }
+//  var vis = {
+//      'min': 0,
+//      'max': 6,
+//      'palette': 'gray,blue,#fbfcae,red,#0c5e09,#a5cca3,brown'
+//  };
+  //var reflo_FBDS = colFBDS_IMAFLORA.remap([6],[1],0)
+  ////Map.addLayer(colFBDS_IMAFLORA, vis, 'Uso FBDS', false)
+  
+  //var desmats_sem_reflo_FBDS = desmats_flo_col6.add(reflo_FBDS)
+  //desmats_sem_reflo_FBDS = desmats_sem_reflo_FBDS.eq(1).selfMask()
+  
+  //Map.addLayer(desmats_sem_reflo_FBDS, {'palette': 'red'}, 'desmats_sem_reflo_FBDS', false);
+  //Map.addLayer(desmats, { min: 0,max: 10,'palette': 'gray, red'}, 'desmats count', false);
+  //Map.addLayer(alertas_Nat,{},'alertas_Nat', false);
+  
+  // TODO limpar classe 9 da coleção
+  
+  var desmats_pol = desmats_flo_col6.reduceToVectors({
+                        reducer: ee.Reducer.countEvery(),
+                        geometry: grid_selec.geometry(), 
+                        geometryType: 'polygon',
+                        scale:10, 
+                        maxPixels:1e13})
+  //print(codigo_grid_S2, desmats_pol.size())
+  
+  var desmats_pol_area = desmats_pol.map(function(x){ return x.set('area', x.area(1))})
+  
+  var desmats_pol_area_final = desmats_pol_area.filterMetadata('area','greater_than', area_minima)
+  
+//  if (debug) {
+//    Map.addLayer(desmats_pol_area,{},'desmats_pol_area',false);
+//  }
+//  //Map.addLayer(desmats_pol_area_final,{'color': "red"},'desmats_pol_area_final',false);
+//  if (print_numbers) {print('SAD count',desmats_pol_area_final.size())}
+//  
+//
+  if (i_cena == 0){ var desmats_pol_area_final2 = desmats_pol_area_final}  
+  else {desmats_pol_area_final2 = desmats_pol_area_final2.merge(desmats_pol_area_final)}
+
+} ;
+
+
+print('SAD count',desmats_pol_area_final2.size())
+
+
+desmats_pol_area_final2 = desmats_pol_area_final2.map(function(feat) {return feat.set({'SOURCE': 'SAD-PAMPA'})});
+desmats_pol_area_final2 = desmats_pol_area_final2.map(function(feat) {return feat.set({'SENSOR': 'SENTINEL2'})});
+desmats_pol_area_final2 = desmats_pol_area_final2.map(function(feat) {return feat.set({'VIEW_DATE': data_referencia.format('dd/MM/yyyy')})});
+
+//nome_bacia = nome_bacia.replace('Ç', 'C').replace('Ê', 'E')
+
+  if (i_grupo == 0){ var desmats_pol_area_final3 = desmats_pol_area_final2}  
+  else {desmats_pol_area_final3 = desmats_pol_area_final3.merge(desmats_pol_area_final2)}
+
+}
+
+var analytic = ee.Image('projects/planet-nicfi/assets/basemaps/americas/planet_medres_normalized_analytic_2022-01_mosaic')
+//print(analytic)
+Map.addLayer(analytic, {min:[200,200,50],max:[1700,1400,1100],gamma: 1.35, bands:["R", "G", "B"]}, 'PLANET depois')
+
+var analytic = ee.Image('projects/planet-nicfi/assets/basemaps/americas/planet_medres_normalized_analytic_2021-08_mosaic')
+//print(analytic)
+Map.addLayer(analytic, {min:[200,200,50],max:[1700,1400,1100],gamma: 1.35, bands:["R", "G", "B"]}, 'PLANET antes')
+
+
+Map.addLayer(desmats_pol_area_final2,{'color': "red"},'desmats_pol_area_final',false);
+
+
+Export.table.toDrive(desmats_pol_area_final3, 'SAD_PAMPA_'+mes_referencia, 'SAD_PAMPA_'+ano, 'SAD_PAMPA_'+mes_referencia, 'SHP', ['area','SOURCE','SENSOR','VIEW_DATE'])

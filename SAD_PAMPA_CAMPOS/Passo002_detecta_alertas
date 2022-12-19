@@ -1,0 +1,235 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var imageVisParam = {"opacity":0.99,"bands":["red","green","blue"],"min":100.32,"max":1987.68,"gamma":1},
+    PAMPA = 
+    /* color: #00ffff */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-57.93043928341707, -30.245507642949],
+          [-53.51393537716707, -34.1124521737167],
+          [-49.49293928341707, -29.884196452120047],
+          [-52.70094709591707, -27.201595856894734],
+          [-55.62331037716707, -27.63070017012045]]]),
+    geometry = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.MultiPoint(
+        [[-54.781032612929366, -30.55806584867737],
+         [-54.38964467347624, -30.706953986214298]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+  
+var regiao = PAMPA
+var nome_reg = 'PAMPA'
+
+var mes_referencia = 7
+var ano = 2022
+var dif_ndvi = 3000
+var area_minima = 5000
+//var versao = 3
+var mes_de_analise =  '01/' + mes_referencia + '/' + ano
+
+var num_samples_flo = 500
+var num_rept = 2   //numero de repetições de deteção de desmatamento nos blocos de 20 dias
+
+var bioma = 'PAMPA'
+
+var biomes = ee.Image('projects/mapbiomas-workspace/AUXILIAR/biomas-raster-41');
+var biome = biomes.mask(biomes.eq(6));
+
+var biomas = ee.FeatureCollection('projects/mapbiomas-workspace/AUXILIAR/biomas_IBGE_250mil')
+var region = biomas.filterMetadata('Bioma','equals', 'Pampa')
+
+Map.addLayer(biome,{'palette': 'ccffcc'}, 'biome', false)
+          
+var dirout = 'projects/nexgenmap/SAD_MapBiomas/Pampa/NDVI_2022'
+var prefixo_out = 'SAD_PAM_'
+
+//var Mapbiomas_col6 = ee.Image('projects/mapbiomas-workspace/public/collection6/mapbiomas_collection60_integration_v1')
+var dirCol = 'projects/mapbiomas-workspace/COLECAO7/integracao';
+var colecao_In = ee.ImageCollection(dirCol).filterMetadata('version','equals','0-25')
+                          .filterBounds(region.geometry()).mosaic().updateMask(biome)
+
+var palettes = require('users/mapbiomas/modules:Palettes.js');
+var pal = palettes.get('classification2');
+var vis = {bands: 'classification_2020','min': 0,'max': 45,'palette': palettes.get('classification5')};
+var visNDVI = {min: 7000,max: 20000,palette: ['ffffff', 'ce7e45', 'df923d', 'f1b555',
+            'fcd163', '99b718', '74a901', '66a000','529400', '3e8601', '609406', '2e8a17',
+            '207401', '2b7a11', '1b570c', '004c00','023b01',],opacity: 1.0}
+var bandNames = ['B2', 'B3',   'B4', 'B8', 'B11',  'B12',  'QA60']
+var newNames = ['blue','green','red','nir','swir1','swir2','BQA']
+
+var image = ee.Image(dirout + prefixo_out + ano + '_mes_' + mes_referencia + '_' + nome_reg)
+
+var s2sr_semana1 = image.select('ndvi_semana1')//.mask(biome)
+var s2sr_semana2 = image.select('ndvi_semana2')//.mask(biome)
+var s2sr_semana3 = image.select('ndvi_semana3')//.mask(biome)
+var s2sr_semana4 = image.select('ndvi_semana4')//.mask(biome)
+var s2sr_referen = image.select('ndvi_referen')//.mask(biome)
+
+
+Map.addLayer(s2sr_semana1, visNDVI,'s2sr_semana1',false);
+Map.addLayer(s2sr_semana2, visNDVI,'s2sr_semana2',false);
+Map.addLayer(s2sr_semana3, visNDVI,'s2sr_semana3',false);
+Map.addLayer(s2sr_semana4, visNDVI,'s2sr_semana4',false);
+Map.addLayer(s2sr_referen, visNDVI,'s2sr_referen',false);
+
+//detecta area passivel de encontrar alertas
+//sad floresta
+//var campos_percis_anos = Mapbiomas_col6.select('classification_2020').remap([3],[1])
+//sad campo
+//**********************************************************************************************
+//**********************************************************************************************
+//**********************************************************************************************
+// obtem estaveis dos ultimos 6 anos 2010 a 2015
+var freq_lim = 10,
+            bandas_anos = ['classification_2011','classification_2013','classification_2014','classification_2015',
+                           'classification_2016','classification_2017','classification_2018','classification_2019',
+                           'classification_2020','classification_2021'],
+            anos = ['2012','2013','2014','2015',
+                    '2016','2017','2018','2019',
+                    '2020','2021']
+
+var colList = ee.List([])
+for (var i_ano=0;i_ano<anos.length; i_ano++){
+  var ano = anos[i_ano];
+
+  var col_remap = colecao_In.select('classification_'+ano).remap(
+        [3, 9, 11, 12, 15, 19, 21, 23, 24, 25, 29, 30, 33, 39, 40, 41],
+        [3, 9, 11, 12, 21, 21, 21, 22, 22, 22, 29, 22, 33, 21, 21, 21])
+
+  colList = colList.add(col_remap.int8())
+};
+
+var collection1 = ee.ImageCollection(colList)
+print(collection1)
+
+var unique = function(arr) {
+    var u = {},
+        a = [];
+    for (var i = 0, l = arr.length; i < l; ++i) {
+        if (!u.hasOwnProperty(arr[i])) {
+            a.push(arr[i]);
+            u[arr[i]] = 1;
+        }
+    }
+    return a;
+};
+
+var getFrenquencyMask = function(collection, classId) {
+    var classIdInt = parseInt(classId, 10);
+    var maskCollection = collection.map(function(image) {
+        return image.eq(classIdInt);
+    });
+    var frequency = maskCollection.reduce(ee.Reducer.sum());
+    var frequencyMask = frequency.gte(classFrequency[classId])
+        .multiply(classIdInt)
+        .toByte();
+    frequencyMask = frequencyMask.mask(frequencyMask.eq(classIdInt));
+    return frequencyMask.rename('frequency').set('class_id', classId);
+};
+
+var lista_image = ee.List([]);
+var classFrequency = { "3": freq_lim, "9": freq_lim, "11": freq_lim, "12": freq_lim, 
+                      "21": freq_lim, "22": freq_lim, "29": freq_lim, "33": freq_lim}
+
+var frequencyMasks = Object.keys(classFrequency).map(function(classId) {
+    return getFrenquencyMask(collection1, classId);
+});
+
+frequencyMasks = ee.ImageCollection.fromImages(frequencyMasks);
+var referenceMap = frequencyMasks.reduce(ee.Reducer.firstNonNull()).clip(region);
+var campos_persis_anos = referenceMap.mask(referenceMap.eq(12)).rename("reference");
+
+var vis = {
+    'bands': ['reference'],
+    'min': 0,
+    'max': 34,
+    'palette': palettes.get('classification2')
+};
+Map.addLayer(campos_persis_anos, vis, 'campos_precis_6anos', true);
+print('campos_persis_anos',campos_persis_anos)
+
+//campos_persis_anos = campos_persis_anos.eq(12)
+
+//*******************************************************************
+//*******************************************************************
+//*******************************************************************
+//*******************************************************************
+
+var queda_ndvi_1 = s2sr_referen.subtract(s2sr_semana1).mask(campos_persis_anos)
+var queda_ndvi_2 = s2sr_referen.subtract(s2sr_semana2).mask(campos_persis_anos)
+var queda_ndvi_3 = s2sr_referen.subtract(s2sr_semana3).mask(campos_persis_anos)
+var queda_ndvi_4 = s2sr_referen.subtract(s2sr_semana4).mask(campos_persis_anos)
+
+var difNDVI = {min: -11000,max: 12000,palette: ['ffffff', 'ce7e45', 'df923d', 'f1b555',
+            'fcd163', '99b718', '74a901', '66a000','529400', '3e8601', '609406', '2e8a17',
+            '207401', '2b7a11', '1b570c', '004c00','023b01',],opacity: 1.0}
+
+
+Map.addLayer(queda_ndvi_1, difNDVI,'queda_ndvi_1',false);
+Map.addLayer(queda_ndvi_2, difNDVI,'queda_ndvi_2',false);
+Map.addLayer(queda_ndvi_3, difNDVI,'queda_ndvi_3',false);
+Map.addLayer(queda_ndvi_4, difNDVI,'queda_ndvi_4',false);
+
+var pts = campos_persis_anos.stratifiedSample({numPoints:0, classBand: 'reference', 
+             region: regiao, scale: 30, seed: 1, classValues: [12], classPoints:[num_samples_flo], geometries: true} )
+             
+print('pts_flo',pts)
+
+Map.addLayer(pts)
+
+var train_semana1 = s2sr_semana1.sampleRegions({'collection': pts,'scale': 10,});
+var train_semana2 = s2sr_semana2.sampleRegions({'collection': pts,'scale': 10,});
+var train_semana3 = s2sr_semana3.sampleRegions({'collection': pts,'scale': 10,});
+var train_semana4 = s2sr_semana4.sampleRegions({'collection': pts,'scale': 10,});
+var train_referen = s2sr_referen.sampleRegions({'collection': pts,'scale': 10,});
+
+print('train_semana1',train_semana1)
+print('train_referen',train_referen)
+
+print(train_referen.aggregate_mean('ndvi_referen'))
+print(train_semana1.aggregate_mean('ndvi_semana1'))
+
+var dif1 =  train_referen.aggregate_mean('ndvi_referen').subtract(train_semana1.aggregate_mean('ndvi_semana1'))
+var dif2 =  train_referen.aggregate_mean('ndvi_referen').subtract(train_semana2.aggregate_mean('ndvi_semana2'))
+var dif3 =  train_referen.aggregate_mean('ndvi_referen').subtract(train_semana3.aggregate_mean('ndvi_semana3'))
+var dif4 =  train_referen.aggregate_mean('ndvi_referen').subtract(train_semana4.aggregate_mean('ndvi_semana4'))
+
+print('dif1',dif1)
+print(' 5000 + dif1',ee.Number(dif_ndvi).add(dif1))
+
+var desmat_ndvi1 = queda_ndvi_1.gt(ee.Number(dif_ndvi).add(dif1))
+var desmat_ndvi2 = queda_ndvi_2.gt(ee.Number(dif_ndvi).add(dif2))
+var desmat_ndvi3 = queda_ndvi_3.gt(ee.Number(dif_ndvi).add(dif3))
+var desmat_ndvi4 = queda_ndvi_4.gt(ee.Number(dif_ndvi).add(dif4))
+
+Map.addLayer(desmat_ndvi1.selfMask(), {'palette': 'red'},'desmat_ndvi1',false);
+Map.addLayer(desmat_ndvi2.selfMask(), {'palette': 'red'},'desmat_ndvi2',false);
+Map.addLayer(desmat_ndvi3.selfMask(), {'palette': 'red'},'desmat_ndvi3',false);
+Map.addLayer(desmat_ndvi4.selfMask(), {'palette': 'red'},'desmat_ndvi4',false);
+
+var desmat_repetido = desmat_ndvi1.add(desmat_ndvi2).add(desmat_ndvi3).add(desmat_ndvi4)
+
+desmat_repetido = desmat_repetido.gte(num_rept).selfMask()
+Map.addLayer(desmat_repetido, {'palette': 'red'},'desmat_repetido',false);
+
+
+var desmats_pol = desmat_repetido.reduceToVectors({
+                        reducer: ee.Reducer.countEvery(),
+                        geometry: regiao,
+                        geometryType: 'polygon',
+                        scale:10, 
+                        maxPixels:1e13})
+
+var desmats_pol_area = desmats_pol.map(function(x){ return x.set('area', x.area(1))})
+var desmats_pol_area_final = desmats_pol_area.filterMetadata('area','greater_than', area_minima)
+
+
+  
+desmats_pol_area_final = desmats_pol_area_final.map(function(feat) {return feat.set({'SOURCE': 'SAD-PAMPA'})});
+desmats_pol_area_final = desmats_pol_area_final.map(function(feat) {return feat.set({'SENSOR': 'SENTINEL2'})});
+desmats_pol_area_final = desmats_pol_area_final.map(function(feat) {return feat.set({'VIEW_DATE': mes_de_analise})});
+
+Map.addLayer(desmats_pol_area_final, {'color': 'red'},'desmats_pol_area_final',false);
+
+Export.table.toDrive(desmats_pol_area_final, 'SAD_MA_BIOMA_'+mes_referencia+'_'+ano+'_'+nome_reg, 'SAD_MA_'+ano, 'SAD_MA_BIOMA_'+mes_referencia+'_'+ano+'_'+nome_reg, 'SHP', ['area','SOURCE','SENSOR','VIEW_DATE'])
+

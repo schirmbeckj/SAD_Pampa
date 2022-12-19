@@ -1,0 +1,195 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var pampa = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-58.002325738520554, -30.3690718412503],
+          [-56.72007815870479, -30.499295222564232],
+          [-56.16245902390205, -31.200415614034142],
+          [-55.15701247951905, -31.52056495976992],
+          [-53.76394503847297, -32.62416660786271],
+          [-53.58289929760831, -34.03358717080886],
+          [-52.591745055671666, -33.39158320323276],
+          [-51.9671866879957, -32.37302487360386],
+          [-50.559119353770484, -31.32147088991393],
+          [-49.71259257697394, -29.72257756616197],
+          [-51.70483040130221, -29.481090891765277],
+          [-53.1059501744738, -29.453420604840932],
+          [-52.73163486370493, -28.69257522584727],
+          [-51.92477114990625, -28.237323479340276],
+          [-52.395449754990395, -27.385623119662082],
+          [-53.09345232874166, -27.29073889388881],
+          [-53.8796175313376, -27.426126162000646],
+          [-55.18794051531749, -27.65496334385179],
+          [-56.463382710195006, -28.589060140835674]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+  
+var biomas = ee.FeatureCollection('projects/mapbiomas-workspace/AUXILIAR/biomas_IBGE_250mil')
+var region = biomas.filterMetadata('Bioma','equals', 'Pampa')
+
+var blank = ee.Image(0).mask(0);
+var outline = blank.paint(region, 'AA0000', 2); 
+var visPar = {'palette':'000000','opacity': 0.6};
+Map.addLayer(outline, visPar, 'bimoa250mil', false);
+
+var biomes = ee.Image('projects/mapbiomas-workspace/AUXILIAR/biomas-raster-41')
+var biome = biomes.mask(biomes.eq(6))
+
+var dirCol = 'projects/mapbiomas-workspace/COLECAO7/integracao';
+var colecao_In = ee.ImageCollection(dirCol).filterMetadata('version','equa             ls','0-25')
+                          .filterBounds(region.geometry()).mosaic().updateMask(biome)
+
+print('colecao_In',colecao_In)
+var dirout = ' projects/nexgenmap/SAD_MapBiomas/Pampa/Campos/Amostras'
+var version_out = 'V01'
+
+var freq_lim = 16,
+            bandas_anos = ['classification_2005','classification_2006','classification_2007','classification_2008','classification_2009',
+                           'classification_2010','classification_2011','classification_2012','classification_2013','classification_2014',
+                           'classification_2015','classification_2016','classification_2017','classification_2018','classification_2019',
+                           'classification_2020','classification_2021'],
+            anos = ['2005','2006','2007','2008','2009',
+                           '2010','2011','2012','2013','2014',
+                           '2015','2016','2017','2018','2019',
+                           '2020','2021'],               
+        sufix = '_05_20';
+
+
+
+var year = 2017
+var palettes = require('users/mapbiomas/modules:Palettes.js');
+//vis coll 05
+var vis = { 'bands':'classification_'+ String(year),'min': 0, 'max': 45,  'palette': palettes.get('classification5')};
+
+//Map.addLayer(colecao_In, vis, 'Classes ORIGINAIS', true);
+print(colecao_In)
+
+
+var colecao_est = colecao_In.select(bandas_anos)
+
+//**********************************************************************************************
+//**********************************************************************************************
+//**********************************************************************************************
+// obtem estaveis dos ultimos 6 anos 2010 a 2015
+var freq_lim = 6,
+            bandas_anos = ['classification_2010','classification_2011','classification_2012','classification_2013','classification_2014',
+                           'classification_2015'],
+            anos = ['2010','2011','2012','2013','2014',
+                           '2015']
+
+var colList = ee.List([])
+for (var i_ano=0;i_ano<anos.length; i_ano++){
+  var ano = anos[i_ano];
+
+  var col_remap = colecao_est.select('classification_'+ano).remap(
+        [3, 9, 11, 12, 15, 19, 21, 23, 24, 25, 29, 30, 33, 39, 40, 41],
+        [3, 9, 11, 12, 21, 21, 21, 22, 22, 22, 29, 22, 33, 21, 21, 21])
+
+  colList = colList.add(col_remap.int8())
+};
+
+var collection1 = ee.ImageCollection(colList)
+print(collection1)
+
+var unique = function(arr) {
+    var u = {},
+        a = [];
+    for (var i = 0, l = arr.length; i < l; ++i) {
+        if (!u.hasOwnProperty(arr[i])) {
+            a.push(arr[i]);
+            u[arr[i]] = 1;
+        }
+    }
+    return a;
+};
+
+var getFrenquencyMask = function(collection, classId) {
+    var classIdInt = parseInt(classId, 10);
+    var maskCollection = collection.map(function(image) {
+        return image.eq(classIdInt);
+    });
+    var frequency = maskCollection.reduce(ee.Reducer.sum());
+    var frequencyMask = frequency.gte(classFrequency[classId])
+        .multiply(classIdInt)
+        .toByte();
+    frequencyMask = frequencyMask.mask(frequencyMask.eq(classIdInt));
+    return frequencyMask.rename('frequency').set('class_id', classId);
+};
+
+var lista_image = ee.List([]);
+var classFrequency = { "3": freq_lim, "9": freq_lim, "11": freq_lim, "12": freq_lim, 
+                      "21": freq_lim, "22": freq_lim, "29": freq_lim, "33": freq_lim}
+
+var frequencyMasks = Object.keys(classFrequency).map(function(classId) {
+    return getFrenquencyMask(collection1, classId);
+});
+
+frequencyMasks = ee.ImageCollection.fromImages(frequencyMasks);
+var referenceMap = frequencyMasks.reduce(ee.Reducer.firstNonNull()).clip(pampa);
+var campos_precis_6anos = referenceMap.mask(referenceMap.eq(12)).rename("reference");
+
+var vis = {
+    'bands': ['reference'],
+    'min': 0,
+    'max': 34,
+    'palette': palettes.get('classification2')
+};
+Map.addLayer(campos_precis_6anos, vis, 'campos_precis_6anos', true);
+
+//**********************************************************************************************
+//**********************************************************************************************
+//**********************************************************************************************
+// calcula incidentes nos anos seguintes
+
+
+
+
+bandas_anos = ['classification_2015','classification_2016','classification_2017','classification_2018','classification_2019',
+               'classification_2020','classification_2021'],
+anos = ['2015','2016','2017','2018','2019',
+               '2020','2021']
+
+var image_in = colecao_In.select(bandas_anos)
+
+ var colList = ee.List([])
+  for (var i_ano=0;i_ano<anos.length; i_ano++){
+    var ano = anos[i_ano];
+    var colList = colList.add(image_in.select(['classification_'+ano],['classification']))
+  }
+  var imc_carta = ee.ImageCollection(colList)
+  //print('imc_carta',imc_carta)
+  var img1 =  ee.Image(imc_carta.first());
+  
+  var imc_carta4 = imc_carta.map(function(image) {
+      image = image.remap(        [3, 9, 11, 12, 15, 19, 21, 23, 24, 25, 29, 30, 33, 39, 40, 41],
+                                  [3, 9, 11, 12, 21, 21, 21, 22, 22, 22, 29, 22, 33, 21, 21, 21])
+      image = image.mask(image.neq(27));
+      return image.rename('classification');
+  });
+
+var image_incidence = imc_carta.reduce(ee.Reducer.countRuns()).subtract(1).rename('incidence');
+
+//var palette_incidence = ["#C8C8C8","#FED266","#FBA713","#cb701b", "#cb701b", "#a95512", "#a95512", "#662000",  "#662000", "#cb181d"]
+Map.addLayer(image_incidence, {}, "incidents original");
+
+var mud_campo = image_incidence.mask(campos_precis_6anos.or(image_incidence.gte(1))).selfMask()
+
+Map.addLayer(mud_campo, {}, "mud_campo");
+//Export.image.toAsset({
+//    "image": referenceMap.toInt8(),
+//    "description": 'Pampa_amostras_estaveis_05a20_col6_erode' + sufix,
+//    "assetId": dirout + 'Pampa_amostras_estaveis_05a20_col6_erode' + sufix,
+//    "scale": 30,
+//    "pyramidingPolicy": {
+//        '.default': 'mode'
+//    },
+//    "maxPixels": 1e13,
+//    "region": pampa
+//});  
+
+
+var regioesCollection = ee.FeatureCollection("users/evelezmartin/shp/Regioes_Pampa_coll05");
+var blank = ee.Image(0).mask(0);
+var outline = blank.paint(regioesCollection, 'AA0000', 2); 
+var visPar = {'palette':'000000','opacity': 0.6};
+Map.addLayer(outline, visPar, 'Regiao', false);

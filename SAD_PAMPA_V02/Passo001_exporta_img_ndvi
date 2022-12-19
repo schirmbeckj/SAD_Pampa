@@ -1,0 +1,202 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var NE = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-39.05998320302822, -18.298249315552212],
+          [-38.02726835927822, -13.160836835628729],
+          [-35.06095976552822, -9.455606705077576],
+          [-34.55558867177822, -7.4344157659632755],
+          [-35.05112551237576, -5.5665396035954275],
+          [-35.50041289052822, -4.8348711342132535],
+          [-35.82681567454144, -7.658836046380856],
+          [-36.90666289052822, -9.086951857898379],
+          [-40.18058867177822, -12.81827101142983],
+          [-42.00431914052822, -15.099745248537854],
+          [-39.52140898427822, -18.73578549213527]]]),
+    SUL = 
+    /* color: #98ff00 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-55.53944435219288, -27.985001422146542],
+          [-55.42958107094288, -29.65971255069726],
+          [-50.15614357094288, -30.059881009040513],
+          [-48.55213966469288, -28.700523973453596],
+          [-47.62928810219288, -25.175425320744335],
+          [-49.89247169594288, -22.806881623908385],
+          [-52.39735450844288, -21.68837430221438],
+          [-54.61197317584984, -21.246152252832076],
+          [-55.37219097197398, -21.897821016237017],
+          [-55.31971778969288, -24.357416323745046]]]),
+    SUDESTE = 
+    /* color: #0b4a8b */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-41.78456153969288, -23.292123924716694],
+          [-39.47743263344288, -19.880712632971576],
+          [-39.38954200844288, -18.761035829672853],
+          [-39.52137794594288, -16.035582786066527],
+          [-41.89442482094288, -14.870798812970405],
+          [-46.92654741118401, -19.643705862009966],
+          [-49.089870093649736, -17.409114238664923],
+          [-51.562594916165935, -18.665322315762655],
+          [-51.08881801920425, -20.23359643435012],
+          [-47.69520607094288, -20.29343346858336],
+          [-46.46473732094288, -23.04972135037164],
+          [-44.98352538235962, -22.737768376630793],
+          [-44.81678810219288, -23.675025320262506]]]),
+    SP = 
+    /* color: #ffc82d */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-50.22206153969288, -23.15077575338171],
+          [-49.58485450844288, -24.777069723990973],
+          [-48.04676857094288, -25.552661478981562],
+          [-44.46522560219288, -23.453481026996233],
+          [-43.98182716469288, -22.644747377852397],
+          [-44.68495216469288, -22.11649324161525],
+          [-46.24501075844288, -22.644747377852397],
+          [-46.33290138344288, -21.42270753189979],
+          [-47.16786232094288, -19.94268992899443],
+          [-50.81532325844288, -19.61186490986701],
+          [-53.51795997719288, -22.746103806180585]]]),
+    imageVisParam = {"opacity":0.99,"bands":["red","green","blue"],"min":100.32,"max":1987.68,"gamma":1},
+    PAMPA = 
+    /* color: #00ffff */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[-57.93043928341707, -30.245507642949],
+          [-53.51393537716707, -34.1124521737167],
+          [-49.49293928341707, -29.884196452120047],
+          [-52.70094709591707, -27.201595856894734],
+          [-55.62331037716707, -27.63070017012045]]]);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+ 
+var regiao = PAMPA
+var nome_reg = 'PAMPA'
+
+var mes_referencia = 10
+var ano = 2022
+
+var num_samples_flo = 500
+
+var bioma = 'MATAATLANTICA'
+
+var biomes = ee.Image('projects/mapbiomas-workspace/AUXILIAR/biomas-raster-41');
+var bioma250mil_MA = biomes.mask(biomes.eq(2));
+Map.addLayer(bioma250mil_MA,{'palette': 'ccffcc'}, 'bioma250mil_MA', false)
+          
+//var dirout = 'projects/nexgenmap/SAD_MapBiomas/MataAtlan_SOS/NDVI_2022'
+var dirout = 'projects/nexgenmap/SAD_MapBiomas/Pampa/NDVI_2022'
+
+var prefixo_out = 'SAD_PAM_'
+
+
+// definição das datas
+var mes_de_analise = ee.Date.fromYMD(ano,mes_referencia,01)
+var data_referencia_ini = mes_de_analise.advance(-10,'month')
+var data_referencia_fim = mes_de_analise.advance(-3,'month').advance(-1,'day')
+var data_analise_ini = mes_de_analise.advance(-2,'month')
+var data_analise_fim = mes_de_analise.advance(1,'month').advance(-1,'day')
+
+print('mes_de_analise',mes_de_analise.format('dd/MM/yyyy'),
+      'data_referencia_ini',data_referencia_ini.format('dd/MM/yyyy'), 
+      'data_referencia_fim',data_referencia_fim.format('dd/MM/yyyy'), 
+      'data_analise_ini', data_analise_ini.format('dd/MM/yyyy'), 
+      'data_analise_fim', data_analise_fim.format('dd/MM/yyyy'))
+      
+print('-20',mes_de_analise.advance(-20,'day').format('dd/MM/yyyy'),
+      '-40',mes_de_analise.advance(-40,'day').format('dd/MM/yyyy'),
+      '-60',mes_de_analise.advance(-60,'day').format('dd/MM/yyyy'),
+      '-80',mes_de_analise.advance(-80,'day').format('dd/MM/yyyy'))
+
+var s2_lv1 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED');
+var s2Clouds = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY');
+
+var palettes = require('users/mapbiomas/modules:Palettes.js');
+var pal = palettes.get('classification2');
+var vis = {bands: 'classification_2020','min': 0,'max': 45,'palette': palettes.get('classification5')};
+var visNDVI = {min: 7000,max: 20000,palette: ['ffffff', 'ce7e45', 'df923d', 'f1b555',
+            'fcd163', '99b718', '74a901', '66a000','529400', '3e8601', '609406', '2e8a17',
+            '207401', '2b7a11', '1b570c', '004c00','023b01',],opacity: 1.0}
+var bandNames = ['B2', 'B3',   'B4', 'B8', 'B11',  'B12',  'QA60']
+var newNames = ['blue','green','red','nir','swir1','swir2','BQA']
+
+// funcoes
+var s2SrWithCloudMask = ee.Join.saveFirst('cloud_mask').apply({
+  primary: s2_lv1,
+  secondary: s2Clouds,
+  condition:
+      ee.Filter.equals({leftField: 'system:index', rightField: 'system:index'})
+});
+
+function maskClouds10(img) {
+  var clouds = ee.Image(img.get('cloud_mask')).select('probability');
+  var isNotCloud = clouds.lt(10);
+  var shade = img.gt(500)
+  return img.updateMask(isNotCloud)//.updateMask(shade);
+}
+function addIndexBands(img) {
+  img = img.select(bandNames,newNames)
+  return img.addBands(img.expression('( b("nir") - b("red") ) / ( b("nir") + b("red") )').rename("ndvi").add(1).multiply(10000).int16())
+};
+
+
+var s2CloudMasked = ee.ImageCollection(s2SrWithCloudMask)
+var s2sr_semana1 = s2CloudMasked
+          .filterDate(mes_de_analise.advance(-20,'day'),mes_de_analise)
+          .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 80))
+          .filterBounds(regiao)
+          .map(maskClouds10)
+          .map(addIndexBands)
+          
+Map.addLayer(s2sr_semana1, imageVisParam,'s2sr_semana1',false);
+var s2sr_semana2 = s2CloudMasked
+          .filterDate(mes_de_analise.advance(-40,'day'),mes_de_analise.advance(-20,'day'))
+          .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 80))
+          .filterBounds(regiao)
+          .map(maskClouds10)
+          .map(addIndexBands)
+Map.addLayer(s2sr_semana2, imageVisParam,'s2sr_semana2',false);
+var s2sr_semana3 = s2CloudMasked
+           .filterDate(mes_de_analise.advance(-60,'day'),mes_de_analise.advance(-40,'day'))
+           .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 80))
+           .filterBounds(regiao)
+           .map(maskClouds10)
+           .map(addIndexBands)
+Map.addLayer(s2sr_semana3, imageVisParam,'s2sr_semana3',false);
+var s2sr_semana4 = s2CloudMasked
+           .filterDate(mes_de_analise.advance(-80,'day'),mes_de_analise.advance(-60,'day'))
+           .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 80))
+           .filterBounds(regiao)
+           .map(maskClouds10)
+           .map(addIndexBands)
+Map.addLayer(s2sr_semana4, imageVisParam,'s2sr_semana4',false);
+var s2sr_referen = s2CloudMasked
+           .filterDate(data_referencia_ini,data_referencia_fim).filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 80))
+           .filterBounds(regiao)
+           .map(maskClouds10)
+           .map(addIndexBands)
+Map.addLayer(s2sr_referen, imageVisParam,'s2sr_referen',false);
+
+var imagem_out =  s2sr_semana1.median().select(['ndvi'],['ndvi_semana1'])
+        .addBands(s2sr_semana2.median().select(['ndvi'],['ndvi_semana2']))
+        .addBands(s2sr_semana3.median().select(['ndvi'],['ndvi_semana3']))
+        .addBands(s2sr_semana4.median().select(['ndvi'],['ndvi_semana4']))
+        .addBands(s2sr_referen.median().select(['ndvi'],['ndvi_referen']))
+
+print(imagem_out)
+
+Export.image.toAsset({
+    "image": imagem_out.toInt16(),
+    'description': prefixo_out+ano+'_mes_'+mes_referencia+'_'+ nome_reg,
+    'assetId': dirout+prefixo_out+ano+'_mes_'+mes_referencia+'_'+ nome_reg,
+    "scale": 10,
+    "pyramidingPolicy": {
+        '.default': 'mode'
+    },
+    "maxPixels": 1e13,
+    "region": regiao
+});     
+
+
